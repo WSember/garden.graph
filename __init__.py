@@ -61,6 +61,7 @@ from kivy.properties import NumericProperty, BooleanProperty,\
     BoundedNumericProperty, StringProperty, ListProperty, ObjectProperty,\
     DictProperty, AliasProperty
 from kivy.clock import Clock
+from kivy.logger import Logger
 from kivy.graphics import Mesh, Color, Rectangle
 from kivy.graphics import Fbo
 from kivy.graphics.transformation import Matrix
@@ -1002,6 +1003,80 @@ class MeshStemPlot(MeshLinePlot):
         mesh.vertices = vert
 
 
+class BarPlot(Plot):
+    '''BarPlot class which displays a bar graph.
+    '''
+
+    bar_width = NumericProperty(1)
+    bar_spacing = NumericProperty(1.)
+
+    def __init__(self, *ar, **kw):
+        super(BarPlot, self).__init__(*ar, **kw)
+        self.bind(bar_width=self.ask_draw)
+
+    def update_bar_width(self, graph, *ar):
+        self.bar_width = (graph.width - graph.padding) / float(len(self.points)) * self.bar_spacing if len(self.points) > 0 else 1
+
+    def create_drawings(self):
+        self._color = Color(*self.color)
+        self._mesh = Mesh()
+        self.bind(color=lambda instr, value: setattr(self._color.rgba, value))
+        return [self._color, self._mesh]
+
+    def draw(self, *args):
+        super(BarPlot, self).draw(*args)
+        points = self.points
+
+        # Currently the mesh only supports (2^16) - 1 points.
+        # TODO: update
+        if len(points) > 2730:
+            Logging.warning("BarPlot: cannot support more than 2730 points.\
+Ignoring extra points.")
+
+        point_len = len(points)
+        mesh = self._mesh
+        mesh.mode = 'triangles'
+        vert = mesh.vertices
+        ind = mesh.indices
+        params = self._params
+        funcx = log10 if params['xlog'] else lambda x: x
+        funcy = log10 if params['ylog'] else lambda x: x
+        xmin = funcx(params['xmin'])
+        ymin = funcy(params['ymin'])
+        diff = len(points) * 6 - len(vert) // 4
+        size = params['size']
+        ratiox = (size[2] - size[0]) / float(funcx(params['xmax']) - xmin)
+        ratioy = (size[3] - size[1]) / float(funcy(params['ymax']) - ymin)
+        if diff < 0:
+            del vert[4 * point_len:]
+            del ind[point_len:]
+        elif diff > 0:
+            ind.extend(range(len(ind), len(ind) + diff))
+            vert.extend([0] * (diff * 4))
+
+        for k in range(point_len):
+            x1 = (funcx(points[k][0]) - xmin) * ratiox + size[0]
+            x2 = x1 + self.bar_width
+            y2 = (funcy(points[k][1]) - ymin) * ratioy + size[1]
+            y1 = (0 - ymin) * ratioy + size[1]
+            idx = k * 24
+            # first triangle
+            vert[idx] = x1
+            vert[idx + 1] = y2
+            vert[idx + 4] = x1
+            vert[idx + 5] = y1
+            vert[idx + 8] = x2
+            vert[idx + 9] = y1
+            # second triangle
+            vert[idx + 12] = x1
+            vert[idx + 13] = y2
+            vert[idx + 16] = x2
+            vert[idx + 17] = y2
+            vert[idx + 20] = x2
+            vert[idx + 21] = y1
+        mesh.vertices = vert
+
+
 class SmoothLinePlot(Plot):
     '''Smooth Plot class, see module documentation for more information.
     This plot use a specific Fragment shader for a custom anti aliasing.
@@ -1133,6 +1208,7 @@ class ContourPlot(Plot):
 
 if __name__ == '__main__':
     import itertools
+    from random import randrange
     from math import sin, cos, pi
     from kivy.utils import get_color_from_hex as rgb
     from kivy.uix.boxlayout import BoxLayout
@@ -1185,6 +1261,12 @@ if __name__ == '__main__':
             plot = MeshStemPlot(color=next(colors))
             graph.add_plot(plot)
             plot.points = [(x, x / 50.) for x in range(-50, 51)]
+
+            plot = BarPlot(color=next(colors), bar_spacing=.72)
+            graph.add_plot(plot)
+            graph.bind(width=plot.update_bar_width)
+            plot.bind(points=lambda *ar: plot.update_bar_width(graph))
+            plot.points = [(x, randrange(11)/10.) for x in range(-50,50)]
 
             Clock.schedule_interval(self.update_points, 1 / 60.)
 
