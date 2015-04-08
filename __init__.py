@@ -1009,21 +1009,25 @@ class BarPlot(Plot):
 
     bar_width = NumericProperty(1)
     bar_spacing = NumericProperty(1.)
+    graph = ObjectProperty(allownone=True)
 
     def __init__(self, *ar, **kw):
         super(BarPlot, self).__init__(*ar, **kw)
         self.bind(bar_width=self.ask_draw)
+        self.bind(points=self.update_bar_width)
+        self.bind(graph=self.update_bar_width)
 
-    def update_bar_width(self, graph, *ar):
-        if len(self.points) < 2 or graph.xmax == graph.xmin:
+    def update_bar_width(self, *ar):
+        if not self.graph or len(self.points) < 2 or \
+            self.graph.xmax == self.graph.xmin:
             return
 
         point_width = len(self.points) * \
-                      float(abs(graph.xmax) + abs(graph.xmin)) / \
+                      float(abs(self.graph.xmax) + abs(self.graph.xmin)) / \
                       float(abs(max(self.points)[0]) + \
                             abs(min(self.points)[0]))
 
-        self.bar_width = (graph.width - graph.padding) / \
+        self.bar_width = (self.graph.width - self.graph.padding) / \
                          point_width * self.bar_spacing \
                          if len(self.points) > 0 else 1
 
@@ -1085,6 +1089,28 @@ Ignoring extra points.")
             vert[idx + 20] = x2
             vert[idx + 21] = y1
         mesh.vertices = vert
+
+    def _unbind_graph(self, graph):
+        graph.unbind(width=self.update_bar_width,
+                     xmin=self.update_bar_width,
+                     ymin=self.update_bar_width)
+
+    def bind_to_graph(self, graph):
+        old_graph = self.graph
+
+        if old_graph:
+            # unbind from the old one
+            self._unbind_graph(old_graph)
+
+        # bind to the new one
+        self.graph = graph
+        graph.bind(width=self.update_bar_width,
+                   xmin=self.update_bar_width,
+                   ymin=self.update_bar_width)
+
+    def unbind_from_graph(self):
+        if self.graph:
+            self._unbind_graph(self.graph)
 
 
 class SmoothLinePlot(Plot):
@@ -1273,12 +1299,7 @@ if __name__ == '__main__':
 
             plot = BarPlot(color=next(colors), bar_spacing=.72)
             graph.add_plot(plot)
-            # The following bindings ensure the bar width will be updated
-            # properly.
-            graph.bind(width=plot.update_bar_width,
-                       xmin=plot.update_bar_width,
-                       ymin=plot.update_bar_width)
-            plot.bind(points=lambda *ar: plot.update_bar_width(graph))
+            plot.bind_to_graph(graph)
             plot.points = [(x, .1 + randrange(10)/10.) for x in range(-50,1)]
 
             Clock.schedule_interval(self.update_points, 1 / 60.)
