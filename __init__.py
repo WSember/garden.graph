@@ -926,7 +926,7 @@ class MeshLinePlot(Plot):
     def create_drawings(self):
         self._color = Color(*self.color)
         self._mesh = Mesh(mode='line_strip')
-        self.bind(color=lambda instr, value: setattr(self._color.rgba, value))
+        self.bind(color=lambda instr, value: setattr(self._color, 'rgba', value))
         return [self._color, self._mesh]
 
     def draw(self, *args):
@@ -1015,23 +1015,33 @@ class BarPlot(Plot):
         self.bind(bar_width=self.ask_draw)
 
     def update_bar_width(self, graph, *ar):
-        self.bar_width = (graph.width - graph.padding) / float(len(self.points)) * self.bar_spacing if len(self.points) > 0 else 1
+        if len(self.points) < 2 or graph.xmax == graph.xmin:
+            return
+
+        point_width = len(self.points) * \
+                      float(abs(graph.xmax) + abs(graph.xmin)) / \
+                      float(abs(max(self.points)[0]) + \
+                            abs(min(self.points)[0]))
+
+        self.bar_width = (graph.width - graph.padding) / \
+                         point_width * self.bar_spacing \
+                         if len(self.points) > 0 else 1
 
     def create_drawings(self):
         self._color = Color(*self.color)
         self._mesh = Mesh()
-        self.bind(color=lambda instr, value: setattr(self._color.rgba, value))
+        self.bind(color=lambda instr, value: setattr(self._color, 'rgba', value))
         return [self._color, self._mesh]
 
     def draw(self, *args):
         super(BarPlot, self).draw(*args)
         points = self.points
 
-        # Currently the mesh only supports (2^16) - 1 points.
-        # TODO: update
-        if len(points) > 2730:
-            Logging.warning("BarPlot: cannot support more than 2730 points.\
+        # The mesh only supports (2^16) - 1 indices, so...
+        if len(points) *  6 > 65535:
+            Logging.warning("BarPlot: cannot support more than 10922 points.\
 Ignoring extra points.")
+            points = points[:10922]
 
         point_len = len(points)
         mesh = self._mesh
@@ -1248,7 +1258,6 @@ if __name__ == '__main__':
                     ymax=1,
                     **graph_theme)
 
-
             plot = SmoothLinePlot(color=next(colors))
             plot.points = [(x / 10., sin(x / 50.)) for x in range(-500, 501)]
             graph.add_plot(plot)
@@ -1264,9 +1273,13 @@ if __name__ == '__main__':
 
             plot = BarPlot(color=next(colors), bar_spacing=.72)
             graph.add_plot(plot)
-            graph.bind(width=plot.update_bar_width)
+            # The following bindings ensure the bar width will be updated
+            # properly.
+            graph.bind(width=plot.update_bar_width,
+                       xmin=plot.update_bar_width,
+                       ymin=plot.update_bar_width)
             plot.bind(points=lambda *ar: plot.update_bar_width(graph))
-            plot.points = [(x, randrange(11)/10.) for x in range(-50,50)]
+            plot.points = [(x, .1 + randrange(10)/10.) for x in range(-50,1)]
 
             Clock.schedule_interval(self.update_points, 1 / 60.)
 
